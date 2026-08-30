@@ -1,0 +1,84 @@
+import type { Quest } from "./types"
+
+export const QUEST_LANES = ["attention", "assigned", "unassigned", "verifying", "ready", "archived"] as const
+export type QuestLane = typeof QUEST_LANES[number]
+
+export const LANE_LABEL: Record<QuestLane, string> = {
+  attention: "Needs attention",
+  assigned: "Assigned",
+  unassigned: "Unassigned",
+  verifying: "Verifying",
+  ready: "Ready to turn in",
+  archived: "Archived",
+}
+
+/** Active board order: blockers, in-progress, incoming to-do, verification, user turn-in. */
+export const ACTIVE_LANE_ORDER: QuestLane[] = ["attention", "assigned", "unassigned", "verifying", "ready"]
+
+export function isAssigned(q: Quest): boolean {
+  return Boolean(q.owner || q.integrationOwner || q.sessions.some((s) => ["planned", "executing", "waiting", "blocked"].includes(s.state)))
+}
+
+/** Unassigned Waiting quests are the to-do lane. Assigned/executing quests are active work. */
+export function questLane(q: Quest): QuestLane {
+  if (q.state === "Archived") return "archived"
+  if (q.state === "Ready to complete" || q.state === "Complete") return "ready"
+  if (q.state === "Needs attention") return "attention"
+  if (q.state === "Verifying") return "verifying"
+  if (q.state === "Working" || isAssigned(q)) return "assigned"
+  return "unassigned"
+}
+
+/** Incoming requests are prepended: newest createdAt, then newest ULID, first. */
+export function sortNewestFirst(quests: Quest[]): Quest[] {
+  return [...quests].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+}
+
+export function questBoard(quests: Quest[]): Record<QuestLane, Quest[]> {
+  const lanes: Record<QuestLane, Quest[]> = { attention: [], assigned: [], unassigned: [], verifying: [], ready: [], archived: [] }
+  for (const q of sortNewestFirst(quests)) lanes[questLane(q)].push(q)
+  return lanes
+}
+
+export type BoardRow =
+  | { kind: "header"; lane: QuestLane; label: string }
+  | { kind: "quest"; lane: QuestLane; quest: Quest }
+
+export function boardRows(quests: Quest[], options: { filter?: string; includeArchived?: boolean } = {}): BoardRow[] {
+  const lanes = questBoard(quests)
+  const order = options.includeArchived ? [...ACTIVE_LANE_ORDER, "archived" as const] : ACTIVE_LANE_ORDER
+  const rows: BoardRow[] = []
+  const filter = options.filter?.toLowerCase()
+  for (const lane of order) {
+    const items = lanes[lane].filter((q) => !filter || `${q.title} ${q.state} ${q.reason}`.toLowerCase().includes(filter))
+    if (!items.length) continue
+    rows.push({ kind: "header", lane, label: LANE_LABEL[lane] })
+    for (const quest of items) rows.push({ kind: "quest", lane, quest })
+  }
+  return rows
+}
+
+export function summarizeQuest(q: Quest) {
+  return {
+    id: q.id,
+    title: q.title,
+    state: q.state,
+    lane: questLane(q),
+    executingCount: q.executingCount,
+    owner: q.owner ?? null,
+    remainingDeliverables: q.deliverables.filter((d) => d.status !== "done").length,
+    unsatisfiedAcceptance: q.acceptanceCriteria.filter((a) => !a.satisfied).length,
+    missing: q.missingRequirements,
+    nextAction: q.nextAction,
+    updatedAt: q.updatedAt,
+  }
+}
+
+export function summarizeBoard(quests: Quest[], lane?: string) {
+  const lanes = questBoard(quests)
+  if (lane && lane in lanes) return { lane, quests: lanes[lane as QuestLane].map(summarizeQuest) }
+  return {
+    counts: Object.fromEntries(QUEST_LANES.map((key) => [key, lanes[key].length])),
+    board: Object.fromEntries(QUEST_LANES.map((key) => [key, lanes[key].map(summarizeQuest)])),
+  }
+}

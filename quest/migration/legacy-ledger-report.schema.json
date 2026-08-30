@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencode.legacy-quest-migration/v1",
+  "title": "OpenCode legacy Quest migration report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "mode", "projects"],
+  "properties": {
+    "schema": { "const": "opencode.legacy-quest-migration/v1" },
+    "version": { "const": 1 },
+    "mode": { "enum": ["preview", "apply"] },
+    "projects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/project" }
+    }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scanned", "parsed", "invalid", "kept", "ambiguous", "highConfidenceJunk", "legacyMessageJunk", "taskLaunchJunk", "taskNotificationJunk", "changed", "alreadyMigrated"],
+      "properties": {
+        "scanned": { "type": "integer", "minimum": 0 },
+        "parsed": { "type": "integer", "minimum": 0 },
+        "invalid": { "type": "integer", "minimum": 0 },
+        "kept": { "type": "integer", "minimum": 0 },
+        "ambiguous": { "type": "integer", "minimum": 0 },
+        "highConfidenceJunk": { "type": "integer", "minimum": 0 },
+        "legacyMessageJunk": { "type": "integer", "minimum": 0 },
+        "taskLaunchJunk": { "type": "integer", "minimum": 0 },
+        "taskNotificationJunk": { "type": "integer", "minimum": 0 },
+        "changed": { "type": "integer", "minimum": 0 },
+        "alreadyMigrated": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["questID", "source", "backup", "classification", "confidence", "reason", "sourceHash", "sessionIDs", "linkDigests"],
+      "properties": {
+        "questID": { "type": "string" },
+        "source": { "type": "string" },
+        "backup": { "type": "string" },
+        "classification": { "enum": ["kept", "ambiguous", "legacy-message-junk", "task-launch-junk", "task-notification-junk"] },
+        "confidence": { "enum": ["high", "ambiguous", "substantive"] },
+        "reason": { "type": "string" },
+        "sourceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sessionIDs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "linkDigests": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "uniqueItems": true },
+        "parseErrors": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectRoot", "ledger", "backupRoot", "backupManifest", "counts", "decisions"],
+      "properties": {
+        "projectRoot": { "type": "string" },
+        "ledger": { "type": "string" },
+        "backupRoot": { "type": "string" },
+        "backupManifest": { "type": "string" },
+        "counts": { "$ref": "#/$defs/counts" },
+        "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } }
+      }
+    }
+  }
+}
