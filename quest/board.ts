@@ -59,26 +59,37 @@ export function boardRows(quests: Quest[], options: { filter?: string; includeAr
 }
 
 export function summarizeQuest(q: Quest) {
+  const stage = q.stages.findIndex((item) => item.status !== "done")
   return {
     id: q.id,
-    title: q.title,
+    title: q.title.slice(0, 100),
     state: q.state,
     lane: questLane(q),
-    executingCount: q.executingCount,
-    owner: q.owner ?? null,
-    remainingDeliverables: q.deliverables.filter((d) => d.status !== "done").length,
-    unsatisfiedAcceptance: q.acceptanceCriteria.filter((a) => !a.satisfied).length,
-    missing: q.missingRequirements,
-    nextAction: q.nextAction,
-    updatedAt: q.updatedAt,
+    stage: q.stages.length ? `${stage < 0 ? q.stages.length : stage + 1}/${q.stages.length}` : undefined,
+    nextAction: q.nextAction.slice(0, 140),
+    running: q.executingCount || undefined,
   }
 }
 
-export function summarizeBoard(quests: Quest[], lane?: string) {
+export function summarizeBoard(quests: Quest[], lane?: string, includeArchived = false, limit = 12) {
   const lanes = questBoard(quests)
-  if (lane && lane in lanes) return { lane, quests: lanes[lane as QuestLane].map(summarizeQuest) }
+  if (lane && lane in lanes) {
+    const rows = lanes[lane as QuestLane]
+    return { lane, quests: rows.slice(0, limit).map(summarizeQuest), truncated: Math.max(0, rows.length - limit) }
+  }
+  const visible = includeArchived ? QUEST_LANES : QUEST_LANES.filter((key) => key !== "archived")
+  let remaining = limit
+  let lanesLeft = visible.length
+  const board = Object.fromEntries(visible.map((key) => {
+    const rows = lanes[key].slice(0, Math.ceil(remaining / lanesLeft))
+    remaining -= rows.length
+    lanesLeft--
+    return [key, rows.map(summarizeQuest)]
+  }))
+  const visibleCount = visible.reduce((total, key) => total + lanes[key].length, 0)
   return {
     counts: Object.fromEntries(QUEST_LANES.map((key) => [key, lanes[key].length])),
-    board: Object.fromEntries(QUEST_LANES.map((key) => [key, lanes[key].map(summarizeQuest)])),
+    board,
+    truncated: Math.max(0, visibleCount - limit),
   }
 }

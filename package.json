@@ -1,0 +1,24 @@
+{
+  "name": "opencode-quests",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./plugins-active/quests.ts",
+    "./tui": "./quest/tui-active/quests.tsx"
+  },
+  "scripts": {
+    "test": "bun test",
+    "visual:e2e": "bun scripts/opencode-visual-e2e.ts --scenario quests"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.23",
+    "@opentui/core": "0.5.9",
+    "@opentui/solid": "0.5.9",
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@opencode-ai/cli": "0.0.0-beta-18743",
+    "@resvg/resvg-js": "2.6.2",
+    "node-pty": "1.2.0-beta.14"
+  }
+}

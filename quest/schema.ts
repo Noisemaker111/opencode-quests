@@ -18,7 +18,7 @@ export function validateQuest(value: unknown): string[] {
   if (!Number.isSafeInteger(q.lifecycleEpoch) || q.lifecycleEpoch < 1) errors.push("invalid lifecycle epoch")
   if (!QUEST_STATES.includes(q.state)) errors.push("invalid state")
   for (const key of ["title", "objective", "reason", "nextAction"]) if (typeof q[key] !== "string") errors.push(`invalid ${key}`)
-  for (const key of ["deliverables", "acceptanceCriteria", "sessions", "claims", "unresolvedWork", "history", "appliedEventIDs"]) if (!Array.isArray(q[key])) errors.push(`invalid ${key}`)
+  for (const key of ["deliverables", "acceptanceCriteria", "usageInstructions", "stages", "setbacks", "sessions", "claims", "unresolvedWork", "history", "appliedEventIDs"]) if (!Array.isArray(q[key])) errors.push(`invalid ${key}`)
   if (!q.extensions || typeof q.extensions !== "object" || Array.isArray(q.extensions)) errors.push("invalid extensions")
   return errors
 }
@@ -32,6 +32,7 @@ export function newQuest(input: Partial<Quest> & Pick<Quest, "id" | "title" | "o
     scope: input.scope ?? { blastRadius: "Not assessed", risk: "medium", repos: [], include: [], exclude: [] },
     relationships: input.relationships ?? { parents: [], subquests: [], dependencies: [], supersedes: [], mergedFrom: [] },
     deliverables: input.deliverables ?? [], acceptanceCriteria: input.acceptanceCriteria ?? [], usageInstructions: input.usageInstructions ?? [],
+    stages: input.stages ?? [], setbacks: input.setbacks ?? [],
     sessions: input.sessions ?? [], claims: input.claims ?? [],
     evidence: input.evidence ?? { commits: [], tests: [], builds: [], artifacts: [], publish: [] },
     unresolvedWork: input.unresolvedWork ?? [], completionPolicy: input.completionPolicy ?? { ...DEFAULT_COMPLETION_POLICY }, missingRequirements: [],

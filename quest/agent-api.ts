@@ -11,7 +11,7 @@ import { createHash } from "node:crypto"
 import { appendLedger } from "../orchestration/orchestration-ledger"
 import type { Quest } from "./types"
 
-export type QuestQuery = { search?: string; state?: string; sessionID?: string; taskID?: string; lane?: string }
+export type QuestQuery = { search?: string; state?: string; sessionID?: string; taskID?: string; lane?: string; includeArchived?: boolean; limit?: number }
 
 /** Canonical agent-facing orchestration authority. All mutations journal through QuestStore. */
 export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { synthetic?: Function }, ledgerFile?: string) {
@@ -53,6 +53,16 @@ export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { 
   }
   const progress = (id: string, callID: string, value: string, state: "executing" | "waiting" | "blocked" | "completed" | "failed" | "cancelled" = "executing", commandSummary?: string) => store.apply(id, "session-state", { callID, state, evidence: value, heartbeatAt: new Date().toISOString(), commandSummary })
   const heartbeat = (id: string, callID: string, leaseMs = 60_000) => store.apply(id, "session-state", { callID, state: "executing", heartbeatAt: new Date().toISOString(), leaseExpiresAt: new Date(Date.now() + leaseMs).toISOString() })
+  const stage = (id: string, stageID: string, status: string, todoID?: string, value?: string) => store.apply(id, "stage-state", { stageID, todoID, status, evidence: value })
+  const proof = (id: string, stageID: string, value: Record<string, unknown>) => {
+    const current = store.read(id)
+    const target = current?.stages.find((candidate) => candidate.id === stageID)
+    if (!target) throw new Error(`Quest stage not found: ${id}/${stageID}`)
+    const at = typeof value.at === "string" ? value.at : new Date().toISOString()
+    const attempt = Number.isSafeInteger(value.attempt) ? Number(value.attempt) : target.attempt
+    const proofID = typeof value.id === "string" && value.id ? value.id : `${stageID}:${String(value.kind)}:${attempt}:${createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 12)}`
+    return store.apply(id, "proof-added", { stageID, proof: { ...value, id: proofID, at, attempt } })
+  }
   const park = (id: string, input: { callID: string; blockerSessionID: string; file: string; reason: string }) => {
     const current = store.read(id)
     const session = current?.sessions.find((candidate) => candidate.callID === input.callID)
@@ -124,13 +134,17 @@ export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { 
     }
     return resumed
   }
-  const mappings = () => {
-    const quests = list()
+  const mappings = (query: { questID?: string; paths?: string[]; verbose?: boolean } = {}) => {
+    const quests = list().filter((q) => !query.questID || q.id === query.questID)
+    const claimQuests = query.paths?.length ? list() : quests
+    const sessionQuests = query.paths?.length && !query.questID ? [] : quests
     return {
-      sessions: quests.flatMap((q) => q.sessions.map((s) => ({ questID: q.id, callID: s.callID, taskID: s.taskID, sessionID: s.openCodeSessionId ?? s.sessionID, model: s.model, scope: s.scope, state: s.state, heartbeat: s.lastHeartbeatAt, dependency: s.dependency, nextAction: q.nextAction }))),
-      activeClaims: quests.flatMap((q) => q.claims.filter((claim) => claim.state === "active").map((claim) => ({ questID: q.id, ...claim }))),
+      sessions: sessionQuests.flatMap((q) => q.sessions.filter((s) => query.verbose || ["planned", "executing", "waiting", "blocked"].includes(s.state)).map((s) => ({ questID: q.id, callID: s.callID, sessionID: s.openCodeSessionId ?? s.sessionID, model: s.model, state: s.state, ...(query.verbose ? { taskID: s.taskID, scope: s.scope, heartbeat: s.lastHeartbeatAt, dependency: s.dependency, nextAction: q.nextAction } : {}) }))),
+      activeClaims: claimQuests.flatMap((q) => q.claims.filter((claim) => claim.state === "active" && (!query.paths?.length || query.paths.some((path) => claimMatches(claim, resolve(claim.repo, path))))).map((claim) => query.verbose || query.paths?.length
+        ? { questID: q.id, sessionID: claim.sessionID, repo: claim.repo, include: claim.include, exclude: claim.exclude, state: claim.state }
+        : { questID: q.id, sessionID: claim.sessionID, repo: claim.repo, patterns: claim.include.slice(0, 2), more: Math.max(0, claim.include.length - 2), state: claim.state })),
     }
   }
-  const board = (query: QuestQuery = {}) => summarizeBoard(list(query), query.lane)
-  return { store, list, search: list, get, view, create, admit, prepend: admit, update, claim, assign, unassign, accept, execute, startSession, complete, turnIn, abandon, archive, reopen, delete: deleteQuest, status, history, evidence, progress, heartbeat, park, handoff, mappings, board }
+  const board = (query: QuestQuery = {}) => summarizeBoard(list(query), query.lane, query.includeArchived === true, Math.max(1, Math.min(query.limit ?? 12, 100)))
+  return { store, list, search: list, get, view, create, admit, prepend: admit, update, claim, assign, unassign, accept, execute, startSession, complete, turnIn, abandon, archive, reopen, delete: deleteQuest, status, history, evidence, progress, heartbeat, stage, proof, park, handoff, mappings, board }
 }

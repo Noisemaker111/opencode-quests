@@ -54,7 +54,7 @@ test("abandon, archive and reopen replay; delete is confirmed and durable", () =
 
 test("work completion remains active until explicit user turn-in and survives reload", () => {
   const root = mkdtempSync(join(tmpdir(), "quest-turn-in-")), id = "01j00000000000000000000000", store = new QuestStore(root)
-  store.create({ id, title: "Turn in", objective: "x", completionPolicy: { requireSessions: false, requireCommits: false, requireTests: false, requireReview: false, requireArtifacts: false, requirePublish: false, requireWorktreeEquality: false } })
+  store.create({ id, title: "Turn in", objective: "x", usageInstructions: ["Use the finished result"], completionPolicy: { requireSessions: false, requireCommits: false, requireTests: false, requireReview: false, requireArtifacts: false, requirePublish: false, requireWorktreeEquality: false } })
   const finished = store.apply(id, "complete", {})
   expect(finished.state).toBe("Complete"); expect(store.read(id)?.state).toBe("Complete")
   const archived = runQuestCommand(store, "turn-in", id)
@@ -63,7 +63,7 @@ test("work completion remains active until explicit user turn-in and survives re
 })
 test("generated Quest log keeps finished work visible with a turn-in action", () => {
   const root = mkdtempSync(join(tmpdir(), "quest-log-")), id = "01j00000000000000000000000", store = new QuestStore(root)
-  store.create({ id, title: "Finished log entry", objective: "x", completionPolicy: { requireSessions: false, requireCommits: false, requireTests: false, requireReview: false, requireArtifacts: false, requirePublish: false, requireWorktreeEquality: false } })
+  store.create({ id, title: "Finished log entry", objective: "x", usageInstructions: ["Use the finished result"], completionPolicy: { requireSessions: false, requireCommits: false, requireTests: false, requireReview: false, requireArtifacts: false, requirePublish: false, requireWorktreeEquality: false } })
   store.apply(id, "complete", {})
   const log = generateQuestIndex(root)
   expect(log).toContain("Finished log entry"); expect(log).toContain("Complete (ready for user turn-in)")

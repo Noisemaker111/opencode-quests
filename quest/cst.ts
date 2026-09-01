@@ -2,7 +2,7 @@ import { digest } from "./privacy"
 import { validateQuest } from "./schema"
 import type { ParsedQuest, Quest } from "./types"
 
-const KNOWN = ["schema","id","revision","lifecycleEpoch","createdAt","updatedAt","title","objective","kind","priority","state","reason","nextAction","executingCount","executionChangedAt","owner","integrationOwner","requestFingerprint","scope","relationships","deliverables","acceptanceCriteria","usageInstructions","sessions","claims","evidence","unresolvedWork","completionPolicy","missingRequirements","notificationCursor","migration","eventCursors","appliedEventIDs","history","abandoned","extensions"] as const
+const KNOWN = ["schema","id","revision","lifecycleEpoch","createdAt","updatedAt","title","objective","kind","priority","state","reason","nextAction","executingCount","executionChangedAt","owner","integrationOwner","requestFingerprint","scope","relationships","deliverables","acceptanceCriteria","usageInstructions","stages","setbacks","sessions","claims","evidence","unresolvedWork","completionPolicy","missingRequirements","notificationCursor","migration","eventCursors","appliedEventIDs","history","abandoned","extensions"] as const
 const known = new Set<string>(KNOWN)
 
 /** JSON scalar/object values on YAML mapping lines: a deliberately strict YAML JSON-subset. */
@@ -17,6 +17,11 @@ export function parseQuestMarkdown(raw: string): ParsedQuest {
     if (!known.has(field[1])) continue // preserve unknown/namespaced CST nodes, but never interpret them
     try { value[field[1]] = JSON.parse(field[2]) } catch { errors.push(`invalid JSON value for ${field[1]}`) }
   }
+  // v1 fields added after launch are additive. Materialize their empty shape
+  // when reading an older snapshot so the existing ledger remains writable.
+  if (!Array.isArray(value.usageInstructions)) value.usageInstructions = []
+  if (!Array.isArray(value.stages)) value.stages = []
+  if (!Array.isArray(value.setbacks)) value.setbacks = []
   errors.push(...validateQuest(value))
   const readonly = errors.length > 0
   return { quest: value as Quest, body, rawFrontmatter: front, raw, readonly, errors, humanHash: humanHash(front, body) }

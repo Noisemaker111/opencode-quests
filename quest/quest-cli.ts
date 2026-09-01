@@ -9,6 +9,7 @@ import { summarizeBoard, summarizeQuest } from "./board"
 import { runQuestCommand } from "./commands"
 const root = process.env.OPENCODE_PROJECT_ROOT ?? process.cwd(), store = new QuestStore(root), args = process.argv.slice(2)
 function print(value: unknown) { console.log(JSON.stringify(value, null, 2)) }
+function printCompact(value: unknown) { console.log(JSON.stringify(value)) }
 function quests() { return readAllQuests(root).flatMap((x) => x.quest ? [x.quest] : []) }
 const cmd = args.shift() ?? "list"
 if (cmd === "create" || cmd === "admit" || cmd === "prepend") {
@@ -24,8 +25,15 @@ else if (cmd === "delete") print(runQuestCommand(store, "delete", args[0], { con
 else if (cmd === "turn-in" || cmd === "turn in") print(runQuestCommand(store, "turn-in", args[0], { reason: args.slice(1).join(" ") || "Explicitly turned in by user" }))
 else if (cmd === "complete") print(runQuestCommand(store, "complete", args[0]))
 else if (cmd === "refresh") print(store.read(args[0]))
+else if (cmd === "mappings" || cmd === "map" || cmd === "claims") {
+  // Keep the terminal escape hatch equivalent to quest(action=mappings). The
+  // old fall-through printed board summaries, which hid the exact owner and
+  // file claims an agent must inspect before editing or staging.
+  const api = (await import("./agent-api")).createQuestAgentAPI(root)
+  printCompact(api.mappings(args[0] ? { questID: args[0] } : {}))
+}
 else if (cmd === "index") console.log(generateQuestIndex(root))
 else if (cmd === "migrate-preview") print(previewMigration(root))
 else if (cmd === "migrate-apply") print(applyMigration(root))
-else if (cmd === "list" || cmd === "board") print(summarizeBoard(quests(), args[0]))
+else if (cmd === "list" || cmd === "board") printCompact(summarizeBoard(quests(), args[0]))
 else print(quests().map(summarizeQuest))

@@ -34,3 +34,16 @@ test("board sorts newest first inside each lane and omits empty headers", () => 
   expect(boardRows(quests, { includeArchived: true }).some((row) => row.kind === "header" && row.lane === "archived")).toBe(true)
   expect(summarizeBoard(quests).counts).toMatchObject({ unassigned: 2, ready: 1, archived: 1 })
 })
+
+test("compact board budgets preserve every non-empty lane", () => {
+  const quests = [
+    ...Array.from({ length: 8 }, (_, i) => q(`01j000000000000000000001${i}`, `assigned ${i}`, "Working")),
+    q("01j00000000000000000000200", "attention", "Needs attention"),
+    q("01j00000000000000000000201", "ready", "Ready to complete"),
+  ]
+  const summary = summarizeBoard(quests, undefined, false, 5)
+  expect(summary.truncated).toBe(5)
+  expect(summary.board.attention).toHaveLength(1)
+  expect(summary.board.assigned.length).toBeGreaterThan(0)
+  expect(summary.board.ready).toHaveLength(1)
+})

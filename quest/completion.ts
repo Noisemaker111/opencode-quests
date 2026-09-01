@@ -1,11 +1,14 @@
 import type { Quest } from "./types"
 import { latestSessionAttempts } from "./session-lineage"
+import { stageMissing } from "./stages"
 
 export function completionMissing(q: Quest, lookup?: (id: string) => Quest | undefined): string[] {
   const out: string[] = []
   const p = q.completionPolicy
   if (q.deliverables.some((d) => d.status !== "done")) out.push("deliverables")
   if (q.acceptanceCriteria.some((a) => !a.satisfied)) out.push("acceptance criteria")
+  for (const stage of q.stages) out.push(...stageMissing(stage))
+  if (!q.usageInstructions.some((line) => line.trim())) out.push("usage instructions")
   if (q.unresolvedWork.length) out.push("unresolved work")
   if (latestSessionAttempts(q.sessions).some((s) => s.state !== "completed")) out.push("missing or non-completed sessions")
   if (p.requireSessions && !q.sessions.length) out.push("session evidence")

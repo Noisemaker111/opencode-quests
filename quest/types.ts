@@ -25,6 +25,19 @@ export type QuestSession = {
   updatedAt: string; lastHeartbeatAt?: string; leaseExpiresAt?: string; commandSummary?: string; result?: string
 }
 export type FileClaim = { sessionID?: string; repo: string; worktree?: string; include: string[]; exclude: string[]; state: "active" | "released" }
+export type QuestStageStatus = "pending" | "working" | "blocked" | "done"
+export type QuestTodo = { id: string; title: string; status: QuestStageStatus; evidence?: string[] }
+export type QuestProof = {
+  id: string; kind: "command" | "run" | "judgment"; at: string; attempt: number
+  result?: "passed" | "failed"; command?: string; artifact?: string; verified?: boolean
+  verdict?: "PASS" | "FAIL"; reason?: string; rewindTo?: string
+}
+export type QuestStage = {
+  id: string; title: string; status: QuestStageStatus; needs: string[]; todos: QuestTodo[]
+  claim: { repos: string[]; include: string[]; exclude: string[] }
+  proofs: QuestProof[]; attempt: number
+}
+export type QuestSetback = { stageID: string; proofID: string; verdict: "FAIL"; reason: string; attempt: number; at: string; rewindTo?: string }
 export type Evidence = {
   commits: Array<{ repo: string; hash: string; worktreeHead?: string; verified: boolean }>
   tests: Array<{ command: string; result: "passed" | "failed"; at: string; summary?: string }>
@@ -47,6 +60,7 @@ export type Quest = {
   executingCount: number; executionChangedAt?: string; owner?: string; integrationOwner?: string; requestFingerprint?: string
   scope: { blastRadius: string; risk: "low" | "medium" | "high"; repos: string[]; include: string[]; exclude: string[] }
   relationships: QuestRelationship; deliverables: Deliverable[]; acceptanceCriteria: AcceptanceCriterion[]; usageInstructions: string[]
+  stages: QuestStage[]; setbacks: QuestSetback[]
   sessions: QuestSession[]; claims: FileClaim[]; evidence: Evidence; unresolvedWork: string[]
   completionPolicy: CompletionPolicy; missingRequirements: string[]; notificationCursor?: string
   migration: { source?: string; previewedAt?: string; appliedAt?: string; records: MigrationRecord[]; legacyAttestation?: string }
@@ -55,7 +69,7 @@ export type Quest = {
 }
 
 export type QuestEventType =
-  | "created" | "patched" | "session-planned" | "session-claimed" | "session-bound" | "session-state" | "session-removed" | "deliverable-state" | "evidence-added"
+  | "created" | "patched" | "session-planned" | "session-claimed" | "session-bound" | "session-state" | "session-removed" | "deliverable-state" | "stage-state" | "proof-added" | "evidence-added"
   | "verify" | "complete" | "archive" | "reopen" | "abandon" | "delete" | "supersede" | "duplicate" | "split" | "merge" | "migration-applied"
 
 export type QuestEvent = {

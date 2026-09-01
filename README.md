@@ -33,6 +33,24 @@ One Markdown file per Quest under `.opencode/quests/`, with the state in
 YAML frontmatter and an append-only event journal beside it. Files are the
 source of truth; the journal reconciles concurrent writers.
 
+## Install
+
+Clone the repository and configure its package directory. The server entry
+advertises its `./tui` export so the Quest tools and board load together:
+
+```jsonc
+// opencode.jsonc
+{ "plugins": ["C:/path/to/opencode-quests"] }
+```
+
+## Real visual E2E
+
+`bun install` then `bun run visual:e2e` seeds a Quest in an isolated Git
+repository, launches a hidden `opencode2 --standalone` PTY, and captures the
+real Quest board as PNG/SVG, OpenTUI spans, text, and asciinema v2 video. The
+Windows CI workflow uploads the same evidence from a clean runner without
+opening or controlling a desktop window.
+
 ## Requires
 
 - `opencode-orchestration` — imported, not vendored. Install it alongside.

@@ -1,6 +1,7 @@
 import { bounded, redact } from "./privacy"
 import { normalizeState } from "./state-machine"
 import type { Quest, QuestEvent, QuestSession, SessionState } from "./types"
+import { dependentStageIDs } from "./stages"
 
 const terminalRank: Record<string, number> = { planned: 0, waiting: 1, executing: 2, blocked: 3, completed: 4, cancelled: 5, stale: 6, missing: 7, failed: 8 }
 function mergeSessionState(oldState: SessionState, next: SessionState): SessionState {
@@ -37,7 +38,7 @@ export function reduceQuest(input: Quest, event: QuestEvent): Quest {
   switch (event.type) {
     case "created": break
     case "patched": {
-      const allowed = ["title","objective","priority","reason","nextAction","owner","integrationOwner","scope","relationships","deliverables","acceptanceCriteria","usageInstructions","claims","unresolvedWork","completionPolicy","extensions"]
+      const allowed = ["title","objective","priority","reason","nextAction","owner","integrationOwner","scope","relationships","deliverables","acceptanceCriteria","usageInstructions","stages","setbacks","claims","unresolvedWork","completionPolicy","extensions"]
       for (const key of allowed) if (key in p) (q as any)[key] = structuredClone(p[key])
       break
     }
@@ -71,6 +72,34 @@ export function reduceQuest(input: Quest, event: QuestEvent): Quest {
     case "deliverable-state": {
       const d = q.deliverables.find((x) => x.id === p.id); if (d) { d.status = p.status; if (p.evidence) d.evidence = bounded([...(d.evidence ?? []), redact(p.evidence)]) }
       else q.unresolvedWork.push(`unknown deliverable ${p.id}`)
+      break
+    }
+    case "stage-state": {
+      const stage = q.stages.find((candidate) => candidate.id === p.stageID)
+      const todo = stage?.todos.find((candidate) => candidate.id === p.todoID)
+      if (!stage) q.unresolvedWork.push(`unknown stage ${p.stageID}`)
+      else if (p.todoID && !todo) q.unresolvedWork.push(`unknown stage todo ${p.stageID}/${p.todoID}`)
+      else if (todo) { todo.status = p.status; if (p.evidence) todo.evidence = bounded([...(todo.evidence ?? []), redact(p.evidence)]) }
+      else stage.status = p.status
+      break
+    }
+    case "proof-added": {
+      const stage = q.stages.find((candidate) => candidate.id === p.stageID)
+      if (!stage) { q.unresolvedWork.push(`unknown stage ${p.stageID}`); break }
+      const proof = structuredClone(p.proof)
+      stage.proofs = [...stage.proofs.filter((candidate) => candidate.id !== proof.id), proof]
+      if (proof.kind === "judgment" && proof.verdict === "FAIL") {
+        const rewindID = q.stages.some((candidate) => candidate.id === proof.rewindTo) ? proof.rewindTo : stage.id
+        const reset = dependentStageIDs(q.stages, rewindID)
+        q.setbacks.push({ stageID: stage.id, proofID: proof.id, verdict: "FAIL", reason: redact(proof.reason || "Judgment failed"), attempt: proof.attempt, at: proof.at, rewindTo: proof.rewindTo })
+        for (const candidate of q.stages) if (reset.has(candidate.id)) {
+          candidate.status = "pending"
+          candidate.attempt = Math.max(candidate.attempt + 1, proof.attempt + 1)
+          for (const todo of candidate.todos) todo.status = "pending"
+        }
+        q.reason = `Stage ${stage.id} failed judgment: ${redact(proof.reason || "No reason supplied", 300)}`
+        q.nextAction = `Retry ${rewindID}; attempt ${q.stages.find((candidate) => candidate.id === rewindID)?.attempt ?? proof.attempt + 1} includes the setback reason`
+      }
       break
     }
     case "evidence-added": {

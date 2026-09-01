@@ -1,0 +1,25 @@
+name: Visual E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  opencode2:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install
+      - run: bun run visual:e2e
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-quests-visual-e2e
+          path: .visual-e2e/artifacts
+          if-no-files-found: error
