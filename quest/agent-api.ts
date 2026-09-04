@@ -6,12 +6,33 @@ import { questLane, summarizeBoard } from "./board"
 import { runQuestCommand } from "./commands"
 import { acquireLock } from "./locking"
 import { claimMatches } from "./claims"
+import { findStep, looksLikeTranscript, stagesFromSteps, stepsFromObjective, type StepInput } from "./steps"
 import { resolve } from "node:path"
 import { createHash } from "node:crypto"
 import { appendLedger } from "../orchestration/orchestration-ledger"
-import type { Quest } from "./types"
+import type { Quest, QuestStageStatus } from "./types"
 
 export type QuestQuery = { search?: string; state?: string; sessionID?: string; taskID?: string; lane?: string; includeArchived?: boolean; limit?: number }
+export type QuestCreateInput = Partial<Quest> & Pick<Quest, "title" | "objective"> & { id?: string; requestFingerprint?: string; steps?: StepInput[] }
+
+const STEP_STATUSES = new Set<QuestStageStatus>(["pending", "working", "blocked", "done"])
+
+/**
+ * A Quest is created with its steps. Callers may pass `steps` (titles or
+ * {title, todos}), full `stages`, or legacy `deliverables`; with none of those
+ * the steps are derived from what the objective itself states, so the board
+ * never shows 0/0 for a request that named its work.
+ */
+function withSteps(input: QuestCreateInput): Omit<QuestCreateInput, "steps"> {
+  const { steps, ...rest } = input
+  if (looksLikeTranscript(rest.title) || (rest.objective !== rest.title && /^\s*<(?:subagent|task|conversation-checkpoint)\b/i.test(rest.objective))) {
+    throw new Error("Refusing to create a Quest from a transcript, tool result or subagent notification; describe the outcome Jk wants instead")
+  }
+  if (Array.isArray(steps) && steps.length) return { ...rest, stages: stagesFromSteps(steps, rest.scope ? { scope: rest.scope } : undefined) }
+  if (rest.stages?.length || rest.deliverables?.length) return rest
+  const derived = stepsFromObjective(rest.objective)
+  return derived.length ? { ...rest, stages: stagesFromSteps(derived, rest.scope ? { scope: rest.scope } : undefined) } : rest
+}
 
 /** Canonical agent-facing orchestration authority. All mutations journal through QuestStore. */
 export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { synthetic?: Function }, ledgerFile?: string) {
@@ -21,14 +42,50 @@ export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { 
     return (!query.search || text.includes(query.search.toLowerCase())) && (!query.state || q.state === query.state) && (!query.sessionID || q.sessions.some((s) => s.sessionID === query.sessionID || s.openCodeSessionId === query.sessionID || s.runtimeSessionId === query.sessionID)) && (!query.taskID || q.sessions.some((s) => s.taskID === query.taskID)) && (!query.lane || questLane(q) === query.lane)
   })
   const get = (id: string) => store.read(id)
-  const admit = (input: Omit<Partial<Quest>, "id"> & Pick<Quest, "title" | "objective"> & { requestFingerprint?: string }) =>
-    store.admit({ ...input, kind: input.kind ?? inferQuestKind(input.title, input.objective), requestFingerprint: input.requestFingerprint ?? requestFingerprint({ title: input.title, objective: input.objective }) })
-  const create = (input: Partial<Quest> & Pick<Quest, "title" | "objective"> & { id?: string }) =>
-    input.id ? store.create(input as Partial<Quest> & Pick<Quest, "id" | "title" | "objective">) : admit(input)
-  const update = (id: string, patch: Record<string, unknown>) => store.apply(id, "patched", patch)
-  const claim = (id: string, input: { callID: string; taskID: string; sessionID?: string; parentID?: string; role: string; model?: string; scope?: Record<string, unknown>; deliverables?: string[]; resumeRoot?: string }) => {
+  const require = (id: string): Quest => {
     const current = store.read(id)
     if (!current) throw new Error(`Quest not found: ${id}`)
+    return current
+  }
+  const admit = (input: QuestCreateInput) => {
+    const prepared = withSteps(input)
+    return store.admit({ ...prepared, kind: prepared.kind ?? inferQuestKind(prepared.title, prepared.objective), requestFingerprint: prepared.requestFingerprint ?? requestFingerprint({ title: prepared.title, objective: prepared.objective }) })
+  }
+  const create = (input: QuestCreateInput) =>
+    input.id ? store.create(withSteps(input) as Partial<Quest> & Pick<Quest, "id" | "title" | "objective">) : admit(input)
+  const update = (id: string, patch: Record<string, unknown>) => {
+    const { steps, ...rest } = patch
+    if (Array.isArray(steps)) rest.stages = stagesFromSteps(steps as StepInput[], require(id))
+    return store.apply(id, "patched", rest)
+  }
+  /** Set the Quest's steps. Existing steps with the same id keep their status and proofs. */
+  const plan = (id: string, steps: StepInput[], mode: "replace" | "append" = "replace") => {
+    const current = require(id)
+    if (!Array.isArray(steps) || !steps.length) throw new Error("plan requires input.steps: a non-empty list of step titles or { title, todos }")
+    const fresh = stagesFromSteps(steps, current)
+    const stages = mode === "append"
+      ? [...current.stages, ...fresh.filter((stage) => !current.stages.some((prior) => prior.id === stage.id))]
+      : fresh.map((stage) => {
+        const prior = current.stages.find((candidate) => candidate.id === stage.id)
+        return prior ? { ...stage, status: prior.status, proofs: prior.proofs, attempt: prior.attempt, todos: stage.todos.length ? stage.todos : prior.todos } : stage
+      })
+    const next = stages.find((stage) => stage.status !== "done")
+    return store.apply(id, "patched", { stages, nextAction: next ? `Step ${stages.indexOf(next) + 1}/${stages.length}: ${next.title}` : current.nextAction })
+  }
+  /** Report one step by id, 1-based position, or unique title prefix. */
+  const step = (id: string, ref: string | number, status: string, value?: string) => {
+    const current = require(id)
+    if (!STEP_STATUSES.has(status as QuestStageStatus)) throw new Error(`step state must be one of pending, working, blocked, done (got ${String(status)})`)
+    const target = findStep(current, ref)
+    if (!target) throw new Error(`Quest step not found: ${String(ref)}. Steps: ${current.stages.map((stage, index) => `${index + 1}=${stage.id}`).join(", ") || "none (call plan first)"}`)
+    const updated = store.apply(id, "stage-state", { stageID: target.id, status, evidence: value })
+    const remaining = updated.stages.filter((stage) => stage.status !== "done")
+    const next = remaining.find((stage) => stage.status === "working") ?? remaining[0]
+    const nextAction = status === "blocked" ? `Unblock step ${target.id}: ${value ?? "see step evidence"}` : next ? `Step ${updated.stages.indexOf(next) + 1}/${updated.stages.length}: ${next.title}` : "All steps done; verify evidence and turn in"
+    return store.apply(id, "patched", { nextAction, ...(status === "blocked" ? { reason: `Step ${target.id} is blocked` } : {}) })
+  }
+  const claim = (id: string, input: { callID: string; taskID: string; sessionID?: string; parentID?: string; role: string; model?: string; scope?: Record<string, unknown>; deliverables?: string[]; resumeRoot?: string }) => {
+    require(id)
     return store.apply(id, "session-claimed", input)
   }
   const assign = (id: string, input: Parameters<typeof claim>[1]) => claim(id, input)
@@ -146,5 +203,5 @@ export function createQuestAgentAPI(projectRoot = process.cwd(), sessionApi?: { 
     }
   }
   const board = (query: QuestQuery = {}) => summarizeBoard(list(query), query.lane, query.includeArchived === true, Math.max(1, Math.min(query.limit ?? 12, 100)))
-  return { store, list, search: list, get, view, create, admit, prepend: admit, update, claim, assign, unassign, accept, execute, startSession, complete, turnIn, abandon, archive, reopen, delete: deleteQuest, status, history, evidence, progress, heartbeat, stage, proof, park, handoff, mappings, board }
+  return { store, list, search: list, get, view, create, admit, prepend: admit, update, plan, step, claim, assign, unassign, accept, execute, startSession, complete, turnIn, abandon, archive, reopen, delete: deleteQuest, status, history, evidence, progress, heartbeat, stage, proof, park, handoff, mappings, board }
 }

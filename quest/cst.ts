@@ -21,7 +21,13 @@ export function parseQuestMarkdown(raw: string): ParsedQuest {
   // when reading an older snapshot so the existing ledger remains writable.
   if (!Array.isArray(value.usageInstructions)) value.usageInstructions = []
   if (!Array.isArray(value.stages)) value.stages = []
+  // Stages written by an older schema may lack todos/proofs/needs; materialize
+  // them so completion checks and the board never crash on one old Quest.
+  value.stages = (value.stages as unknown[]).map((stage) => stage && typeof stage === "object" ? { status: "pending", needs: [], todos: [], proofs: [], attempt: 1, claim: { repos: [], include: [], exclude: [] }, ...(stage as object) } : stage)
   if (!Array.isArray(value.setbacks)) value.setbacks = []
+  // Older Quests stored deliverables and acceptance as bare strings.
+  if (Array.isArray(value.deliverables)) value.deliverables = (value.deliverables as unknown[]).map((item, index) => typeof item === "string" ? { id: `item-${index + 1}`, title: item, status: "pending" } : item)
+  if (Array.isArray(value.acceptanceCriteria)) value.acceptanceCriteria = (value.acceptanceCriteria as unknown[]).map((item, index) => typeof item === "string" ? { id: `accept-${index + 1}`, text: item, satisfied: false } : item)
   errors.push(...validateQuest(value))
   const readonly = errors.length > 0
   return { quest: value as Quest, body, rawFrontmatter: front, raw, readonly, errors, humanHash: humanHash(front, body) }

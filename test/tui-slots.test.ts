@@ -75,7 +75,7 @@ test.skipIf(!existsSync(HOST_EXE))("the running host still renders exactly these
   // actually loads the plugins and re-derives the map from its own renderer
   // calls, `_(to, { path: "<slot>" })`.
   const text = new TextDecoder("latin1").decode(await Bun.file(HOST_EXE).bytes())
-  const found = [...text.matchAll(/_\(to,\{path:"([a-z][a-z.]*)"/g)].map((m) => m[1])
+  const found = [...text.matchAll(/_\([A-Za-z$_][\w$]*,\{path:"([a-z][a-z.]*)"/g)].map((m) => m[1])
   expect([...new Set(found)].sort()).toEqual([...RUNTIME_SLOTS].sort())
 })
 

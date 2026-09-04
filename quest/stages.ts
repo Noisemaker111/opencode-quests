@@ -15,10 +15,10 @@ export function proofPassed(proof: QuestProof): boolean {
 
 export function stageMissing(stage: QuestStage): string[] {
   const missing: string[] = []
-  if (stage.todos.some((todo) => todo.status !== "done")) missing.push(`stage ${stage.id} todos`)
+  if ((stage.todos ?? []).some((todo) => todo.status !== "done")) missing.push(`stage ${stage.id} todos`)
   if (stage.status !== "done") missing.push(`stage ${stage.id}`)
-  for (const kind of requiredProofKinds(stage)) {
-    if (!stage.proofs.some((proof) => proof.kind === kind && proof.attempt === stage.attempt && proofPassed(proof))) missing.push(`stage ${stage.id} ${kind} proof`)
+  for (const kind of requiredProofKinds({ claim: stage.claim ?? { repos: [], include: [], exclude: [] } })) {
+    if (!(stage.proofs ?? []).some((proof) => proof.kind === kind && proof.attempt === stage.attempt && proofPassed(proof))) missing.push(`stage ${stage.id} ${kind} proof`)
   }
   return missing
 }

@@ -61,7 +61,15 @@ export function reduceQuest(input: Quest, event: QuestEvent): Quest {
     case "session-state": {
       const s = findSession(q, p)
       if (!s) q.unresolvedWork.push(`missing exact session link for ${p.callID ?? p.sessionID ?? "unknown"}`)
-      else { s.state = p.state === "waiting" ? "waiting" : mergeSessionState(s.state, p.state); if (p.evidence) s.evidence = bounded([...s.evidence, redact(p.evidence)]); if (p.heartbeatAt) s.lastHeartbeatAt = redact(p.heartbeatAt); if (p.leaseExpiresAt) s.leaseExpiresAt = redact(p.leaseExpiresAt); if (p.commandSummary) s.commandSummary = redact(p.commandSummary); if (p.result) s.result = redact(p.result); if (p.openCodeSessionId) { s.openCodeSessionId = redact(p.openCodeSessionId); s.sessionID = s.openCodeSessionId }; if (p.runtimeSessionId) s.runtimeSessionId = redact(p.runtimeSessionId); if (p.runID) s.runID = redact(p.runID); if (p.dependency) s.dependency = structuredClone(p.dependency); s.updatedAt = event.at }
+      else {
+        s.state = p.state === "waiting" ? "waiting" : mergeSessionState(s.state, p.state)
+        // Identity learned after dispatch: the host names the provider/model that actually answered.
+        if (typeof p.providerID === "string" && p.providerID) s.providerID = redact(p.providerID, 100)
+        if (typeof p.modelID === "string" && p.modelID) s.modelID = redact(p.modelID, 150)
+        if (typeof p.model === "string" && p.model) s.model = redact(p.model, 150)
+        if (typeof p.agentRole === "string" && p.agentRole && !s.agentRole) s.agentRole = redact(p.agentRole, 100)
+        if (typeof p.task === "string" && p.task && !s.task) s.task = redact(p.task, 500)
+        if (p.evidence) s.evidence = bounded([...s.evidence, redact(p.evidence)]); if (p.heartbeatAt) s.lastHeartbeatAt = redact(p.heartbeatAt); if (p.leaseExpiresAt) s.leaseExpiresAt = redact(p.leaseExpiresAt); if (p.commandSummary) s.commandSummary = redact(p.commandSummary); if (p.result) s.result = redact(p.result); if (p.openCodeSessionId) { s.openCodeSessionId = redact(p.openCodeSessionId); s.sessionID = s.openCodeSessionId }; if (p.runtimeSessionId) s.runtimeSessionId = redact(p.runtimeSessionId); if (p.runID) s.runID = redact(p.runID); if (p.dependency) s.dependency = structuredClone(p.dependency); s.updatedAt = event.at }
       break
     }
     case "session-removed": {

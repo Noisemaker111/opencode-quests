@@ -57,6 +57,8 @@ export function compactQuestDetail(q: Quest) {
     pendingDeliverables: stage ? undefined : fallback,
     acceptance: pending.slice(0, 6).map((item) => ({ id: item.id, text: clip(item.text, 180) })),
     acceptanceRemaining: pending.length,
+    steps: q.stages.slice(0, 12).map((step) => ({ id: step.id, title: clip(step.title, 100), status: step.status })),
+    stepsRemaining: Math.max(0, q.stages.length - 12),
     payout: { provided: q.usageInstructions.length > 0, count: q.usageInstructions.length },
     abandoned: q.abandoned || undefined,
     latestSetback: latestSetback ? { stageID: latestSetback.stageID, attempt: latestSetback.attempt, reason: clip(latestSetback.reason, 300), rewindTo: latestSetback.rewindTo } : undefined,
@@ -70,4 +72,32 @@ export function compactQuestDetail(q: Quest) {
     })),
     review: q.evidence.review ? { verdict: q.evidence.review.verdict, at: q.evidence.review.at } : undefined,
   }
+}
+
+/** Bounded worker prompt derived from the ledger. History and extensions never enter it. */
+export function compactQuestDispatch(q: Quest, task: string): string {
+  const detail = compactQuestDetail(q)
+  const stage = detail.currentStage
+  const scope = detail.scope
+  const visible = (scope.include ?? []).some((path) => /(?:^|[\\/])(tui|ui)(?:[\\/]|$)|\.(?:tsx?|jsx?|css|html|svg|png|jpg|jpeg|gif)$/i.test(path))
+  const todos = stage?.todos ?? detail.pendingDeliverables ?? []
+  const mark = (status: string) => status === "done" ? " ✓" : status === "pending" ? "" : ` (${status})`
+  const steps = q.stages.slice(0, 10).map((step, index) => `${index + 1}. [${step.id}] ${clip(step.title, 90)}${mark(step.status)}`)
+  const lines = [
+    `Quest ${q.id}: ${detail.title}`,
+    detail.objective && `Goal: ${detail.objective}`,
+    `Task: ${clip(task, 500)}`,
+    detail.nextAction && `Now: ${detail.nextAction}`,
+    steps.length ? `Steps:\n${steps.join("\n")}` : "",
+    stage && `Current step ${detail.stage} [${stage.id}, attempt ${stage.attempt}]: ${stage.title}`,
+    `Proof: ${visible ? "command + run artifact + judgment" : "command"}`,
+    detail.latestSetback && `Prior failure (attempt ${detail.latestSetback.attempt}): ${detail.latestSetback.reason}`,
+    todos.length ? `Todos:\n${todos.slice(0, 6).map((item) => `- ${item.id}: ${"title" in item ? item.title : ""}`).join("\n")}` : "",
+    scope.include.length ? `Claim: ${clip(scope.include.slice(0, 12).join(", "), 400)}` : "",
+    scope.exclude.length ? `Avoid: ${clip(scope.exclude.slice(0, 8).join(", "), 200)}` : "",
+    detail.acceptance.length ? `Acceptance:\n${detail.acceptance.slice(0, 5).map((item) => `- ${item.id}: ${item.text}`).join("\n")}` : "",
+    `Payout: ${detail.payout.provided ? `${detail.payout.count} usage instruction(s) recorded` : "missing; Quest cannot complete"}`,
+    `Report: quest(action="step", id="${q.id}", input={stepID}, state="working"|"done"|"blocked", value=<evidence or blocker>) as you start and finish each step; quest(action="evidence", id="${q.id}", kind="tests", value={command,result,at}) for test runs. Never create Quests.`,
+  ]
+  return lines.filter(Boolean).join("\n").slice(0, 4000)
 }

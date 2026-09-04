@@ -8,7 +8,7 @@ import { C, QuestBoard, activate, projectRoot, quests } from "./quest-board"
 
 function openBoard(context: any, questID?: string) {
   if (typeof context?.ui?.router?.navigate === "function") {
-    context.ui.router.navigate({ type: "plugin", id: "quests", name: "quests", data: questID ? { questID } : undefined })
+    context.ui.router.navigate({ type: "plugin", name: "quests", data: questID ? { questID } : undefined })
     return
   }
   context?.ui?.dialog?.show?.(() => <QuestBoard context={context} initialQuestID={questID} />)
@@ -16,7 +16,7 @@ function openBoard(context: any, questID?: string) {
 
 const STARTED = Symbol.for("opencode-config.quests.primary-route")
 function Commands(props: { context: any }) {
-  props.context.keymap.layer(() => ({ mode: "global", commands: [{ id: "quests.open", title: "Open Quest Giver", group: "System", palette: true, suggested: true, slash: { name: "quests" }, run: () => openBoard(props.context) }] }))
+  props.context.keymap.layer(() => ({ mode: "global", commands: [{ id: "quests.open", title: "Open Quest Giver", group: "System", palette: true, suggested: true, slash: { name: "quests", aliases: ["quest"] }, run: () => openBoard(props.context) }] }))
   onMount(() => {
     const state = globalThis as any
     if (!state[STARTED]) { state[STARTED] = true; openBoard(props.context) }
